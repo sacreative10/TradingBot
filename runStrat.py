@@ -1,7 +1,4 @@
 
-from main import *
+import main
 
-
-account = login()
-
-runStrategyAtClose(account)
+main.main()

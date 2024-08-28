@@ -1,6 +1,7 @@
 from dotenv import dotenv_values
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
+from alpaca.trading.enums import QueryOrderStatus
 from getRelevantStockData import getRelevantStockData
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -15,7 +16,6 @@ def isMarketOpen() -> bool:
 
 secrets = dotenv_values(".env")
 
-stocksToTrade = ["AAPL", "ASTS", "RKLB", "PANW", "NVDA", "AMD"]
 startingValue = 100000
 
 def login() -> TradingClient:
@@ -99,6 +99,16 @@ def seePerformance(account):
     print("Equity: " + str(tradeAccount.equity))
 
 
+def getStocks():
+    supabaseClient = logintoSupabase()
+    supabaseClient.storage.from_('StockData').download('stocks.txt')
+
+    stocks = open("stocks.txt", "r").read().split("\n")
+
+    from os import remove
+    remove("stocks.txt")
+    return stocks
+
 def runStrategyAtClose(account):
     # This function is to be run from
     # a daemon
@@ -108,7 +118,7 @@ def runStrategyAtClose(account):
 
     strategy = getStrategy()
 
-    for stockToTrade in stocksToTrade:
+    for stockToTrade in getStocks():
         strategyInput = createStrategyInput(stockToTrade)
         if not doWeHaveThisStock(account, stockToTrade):
             if strategy.shouldWeBuy(strategyInput):
@@ -125,10 +135,108 @@ def runStrategyAtClose(account):
                 print ("Holding" + stockToTrade)
             
 
+import supabase
+def logintoSupabase():
+    return supabase.Client(secrets["SUPABASE_URL"], secrets["SUPABASE_KEY"])
 
+fileNames = ["daily_performance.csv", "daily_trades.csv"]
+
+def createdailyperf():
+    dailyPerformance = open("daily_performance.csv", "w")
+    dailyPerformance.write("Date,Equity,ΔEquity\n")
+    dailyPerformance.close()
+def createdailytrades(): 
+    dailyTrades = open("daily_trades.csv", "w")
+    dailyTrades.write("Date,Stock,Action,Price\n")
+    dailyTrades.close()
+
+def getFilesfromSupabase():
+    supabaseClient = logintoSupabase()
+    bucket = supabaseClient.storage.from_('StockData')
+
+    # if the files exist, download them
+    if bucket:
+        files = bucket.list()
+        if files:
+            for file in fileNames:
+                if "daily_performance.csv" in files:
+                    bucket.download("daily_performance.csv")
+                if "daily_trades.csv" in files:
+                    bucket.download("daily_trades.csv")
+    # say if the files don't exist, create them and upload them
+    try :
+        dailyPerformance = open("daily_performance.csv", "r")
+        dailyTrades = open("daily_trades.csv", "r")
+    except FileNotFoundError:
+        createdailyperf()
+        createdailytrades()
+        for fileName in fileNames:
+            file = open(fileName, "rb")
+            bucket.upload(fileName, file)
+            
+
+
+def uploadFilesToSupabase():
+    supabaseClient = logintoSupabase()
+    bucket = supabaseClient.storage.from_('StockData')
+    for fileName in fileNames:
+        file = open(fileName, "rb")
+        bucket.upload(fileName, file, {'upsert': 'true',})
+
+
+def getTodaysOrders(account):
+    orders = account.get_orders(GetOrdersRequest(
+        status=QueryOrderStatus.OPEN
+    ))
+
+    return orders
+
+
+def updateFiles(account):
+    Date = datetime.now().strftime("%Y-%m-%d")
+
+    # Daily performance
+    # Date, Equity, Change in equity
+    dailyPerformance = open("daily_performance.csv", "a")
+    dailyPerformance.write(Date + ",")
+    dailyPerformance.write(account.get_account().equity + ",")
+    dailyPerformance.write(str(float(account.get_account().last_equity) - float(account.get_account().equity)) + "\n")
+    
+
+    # Daily trades
+    # Date,Stock,Action,Price
+    dailyTrades = open("daily_trades.csv", "a")
+
+    orders = getTodaysOrders(account)
+    for order in orders:
+        dailyTrades.write(Date + ",")
+        dailyTrades.write(order.symbol + ",")
+        dailyTrades.write(order.side + ",")
+        # get price bought at or sold at from history
+        stockData = getRelevantStockData(order.symbol)
+        price = stockData["Close"][0]
+        dailyTrades.write(str(price) + "\n")
+
+    
+    dailyPerformance.close()
+    dailyTrades.close()
+
+def deleteFiles():
+    import os
+    for fileName in fileNames:
+        os.remove(fileName)
+
+def main():
+    getFilesfromSupabase()
+    account = login()
+    runStrategyAtClose(account)
+    updateFiles(account)
+    uploadFilesToSupabase()
+    deleteFiles()
 
 
 
 
     
 
+                
