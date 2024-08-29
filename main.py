@@ -4,6 +4,7 @@ from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
 from alpaca.trading.enums import QueryOrderStatus
 from getRelevantStockData import getRelevantStockData
 import warnings
+import supabase
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 from datetime import datetime
@@ -99,9 +100,10 @@ def seePerformance(account):
     print("Equity: " + str(tradeAccount.equity))
 
 
-def getStocks():
-    supabaseClient = logintoSupabase()
-    supabaseClient.storage.from_('StockData').download('stocks.txt')
+def getStocks(supabaseClient):
+    bucket = supabaseClient.storage.from_('StockData')
+
+    bucket.download("stocks.txt")
 
     stocks = open("stocks.txt", "r").read().split("\n")
 
@@ -109,7 +111,7 @@ def getStocks():
     remove("stocks.txt")
     return stocks
 
-def runStrategyAtClose(account):
+def runStrategyAtClose(alpacaAccount, supabaseClient):
     # This function is to be run from
     # a daemon
     if isMarketOpen():
@@ -118,24 +120,23 @@ def runStrategyAtClose(account):
 
     strategy = getStrategy()
 
-    for stockToTrade in getStocks():
+    for stockToTrade in getStocks(supabaseClient):
         strategyInput = createStrategyInput(stockToTrade)
-        if not doWeHaveThisStock(account, stockToTrade):
+        if not doWeHaveThisStock(alpacaAccount, stockToTrade):
             if strategy.shouldWeBuy(strategyInput):
                 print("Buying stock " + stockToTrade)
-                buyStock(account, stockToTrade)
+                buyStock(alpacaAccount, stockToTrade)
             else:
                 print("Not buying stock " + stockToTrade)
             
         else:
             if strategy.shouldWeSell(strategyInput):
                 print ("Selling stock " + stockToTrade)
-                sellStock(account, stockToTrade)
+                sellStock(alpacaAccount, stockToTrade)
             else:
                 print ("Holding" + stockToTrade)
             
 
-import supabase
 def logintoSupabase():
     return supabase.Client(secrets["SUPABASE_URL"], secrets["SUPABASE_KEY"])
 
@@ -150,41 +151,29 @@ def createdailytrades():
     dailyTrades.write("Date,Stock,Action,Price\n")
     dailyTrades.close()
 
-def getFilesfromSupabase():
-    supabaseClient = logintoSupabase()
+def getFilesfromSupabase(supabaseClient):
     bucket = supabaseClient.storage.from_('StockData')
 
     # if the files exist, download them
-    if bucket:
-        files = bucket.list()
-        if files:
-            for file in fileNames:
-                if "daily_performance.csv" in files:
-                    bucket.download("daily_performance.csv")
-                if "daily_trades.csv" in files:
-                    bucket.download("daily_trades.csv")
+    bucket.download("daily_performance.csv")
+    bucket.download("daily_trades.csv")
     # say if the files don't exist, create them and upload them
     try :
         dailyPerformance = open("daily_performance.csv", "r")
     except FileNotFoundError:
+        print ("Creating daily_performance.csv")
         createdailyperf()
     
     try:
         dailyTrades = open("daily_trades.csv", "r")
     except FileNotFoundError:
+        print ("Creating daily_trades.csv")
         createdailytrades()
-
-    for fileName in fileNames:
-        file = open(fileName, "rb")
-        bucket.upload(fileName, file, {'upsert': 'true',})
-
-
     
             
 
 
-def uploadFilesToSupabase():
-    supabaseClient = logintoSupabase()
+def uploadFilesToSupabase(supabaseClient):
     bucket = supabaseClient.storage.from_('StockData')
     for fileName in fileNames:
         file = open(fileName, "rb")
@@ -234,11 +223,12 @@ def deleteFiles():
         os.remove(fileName)
 
 def main():
-    getFilesfromSupabase()
-    account = login()
-    runStrategyAtClose(account)
-    updateFiles(account)
-    uploadFilesToSupabase()
+    alpacaaccount = login()
+    supabaseAccount = logintoSupabase()
+    getFilesfromSupabase(supabaseAccount)
+    runStrategyAtClose(alpacaaccount, supabaseAccount)
+    updateFiles(alpacaaccount)
+    uploadFilesToSupabase(supabaseAccount)
     deleteFiles()
 
 
