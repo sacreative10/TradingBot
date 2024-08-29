@@ -166,13 +166,20 @@ def getFilesfromSupabase():
     # say if the files don't exist, create them and upload them
     try :
         dailyPerformance = open("daily_performance.csv", "r")
-        dailyTrades = open("daily_trades.csv", "r")
     except FileNotFoundError:
         createdailyperf()
+    
+    try:
+        dailyTrades = open("daily_trades.csv", "r")
+    except FileNotFoundError:
         createdailytrades()
-        for fileName in fileNames:
-            file = open(fileName, "rb")
-            bucket.upload(fileName, file)
+
+    for fileName in fileNames:
+        file = open(fileName, "rb")
+        bucket.upload(fileName, file, {'upsert': 'true',})
+
+
+    
             
 
 
