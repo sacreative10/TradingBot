@@ -4,7 +4,6 @@ from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
 from alpaca.trading.enums import QueryOrderStatus
 from getRelevantStockData import getRelevantStockData
 import warnings
-import supabase
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 from datetime import datetime
@@ -101,17 +100,11 @@ def seePerformance(account):
 
 
 def getStocks(supabaseClient):
-    bucket = supabaseClient.storage.from_('StockData')
-
-    bucket.download("stocks.txt")
-
     stocks = open("stocks.txt", "r").read().split("\n")
 
-    from os import remove
-    remove("stocks.txt")
     return stocks
 
-def runStrategyAtClose(alpacaAccount, supabaseClient):
+def runStrategyAtClose(alpacaAccount):
     # This function is to be run from
     # a daemon
     if isMarketOpen():
@@ -120,7 +113,7 @@ def runStrategyAtClose(alpacaAccount, supabaseClient):
 
     strategy = getStrategy()
 
-    for stockToTrade in getStocks(supabaseClient):
+    for stockToTrade in getStocks():
         strategyInput = createStrategyInput(stockToTrade)
         if not doWeHaveThisStock(alpacaAccount, stockToTrade):
             if strategy.shouldWeBuy(strategyInput):
@@ -137,10 +130,7 @@ def runStrategyAtClose(alpacaAccount, supabaseClient):
                 print ("Holding" + stockToTrade)
             
 
-def logintoSupabase():
-    return supabase.Client(secrets["SUPABASE_URL"], secrets["SUPABASE_KEY"])
 
-fileNames = ["daily_performance.csv", "daily_trades.csv"]
 
 def createdailyperf():
     dailyPerformance = open("daily_performance.csv", "w")
@@ -151,33 +141,7 @@ def createdailytrades():
     dailyTrades.write("Date,Stock,Action,Price\n")
     dailyTrades.close()
 
-def getFilesfromSupabase(supabaseClient):
-    bucket = supabaseClient.storage.from_('StockData')
 
-    # if the files exist, download them
-    bucket.download("daily_performance.csv")
-    bucket.download("daily_trades.csv")
-    # say if the files don't exist, create them and upload them
-    try :
-        dailyPerformance = open("daily_performance.csv", "r")
-    except FileNotFoundError:
-        print ("Creating daily_performance.csv")
-        createdailyperf()
-    
-    try:
-        dailyTrades = open("daily_trades.csv", "r")
-    except FileNotFoundError:
-        print ("Creating daily_trades.csv")
-        createdailytrades()
-    
-            
-
-
-def uploadFilesToSupabase(supabaseClient):
-    bucket = supabaseClient.storage.from_('StockData')
-    for fileName in fileNames:
-        file = open(fileName, "rb")
-        bucket.upload(fileName, file, {'upsert': 'true',})
 
 
 def getTodaysOrders(account):
@@ -217,19 +181,13 @@ def updateFiles(account):
     dailyPerformance.close()
     dailyTrades.close()
 
-def deleteFiles():
-    import os
-    for fileName in fileNames:
-        os.remove(fileName)
 
 def main():
     alpacaaccount = login()
-    supabaseAccount = logintoSupabase()
-    getFilesfromSupabase(supabaseAccount)
-    runStrategyAtClose(alpacaaccount, supabaseAccount)
+    runStrategyAtClose(alpacaaccount)
     updateFiles(alpacaaccount)
-    uploadFilesToSupabase(supabaseAccount)
-    deleteFiles()
+
+
 
 
 

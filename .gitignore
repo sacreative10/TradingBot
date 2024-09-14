@@ -163,4 +163,3 @@ cython_debug/
 
 daily_performance.csv
 daily_trades.csv
-stocks.txt
