@@ -8,3 +8,8 @@
 
 **I ONLY DO ALPACA PAPER TRADING (DEMO ACCOUNT MONEY) WHEN WORKING USING THIS**
 
+
+# Usage
+- Create python virtualenv
+- Activate this virtual environment
+- `pip install -r requirements.txt`
